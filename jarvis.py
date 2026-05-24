@@ -163,21 +163,35 @@ def inicio_automatico():
 # RECONOCIMIENTO DE VOZ
 # =========================================================
 
-def escuchar_comando(timeout=5, phrase_limit=7):
+# Reutilizar el mismo Recognizer y Microphone en cada ciclo para
+# evitar la latencia de recrearlos y perder el inicio de la frase.
+_recognizer = sr.Recognizer()
+_microphone = sr.Microphone()
+
+# pause_threshold: cuánto silencio (seg) hace falta para dar la frase por terminada.
+# El defecto (0.8 s) corta demasiado rápido; con 1.5 s el usuario puede hablar
+# con pausas naturales sin que JARVIS lo interrumpa.
+_recognizer.pause_threshold       = 1.5
+_recognizer.non_speaking_duration = 0.5
+_recognizer.dynamic_energy_threshold = True
+
+def _calibrar_microfono():
+    """Calibra el umbral de ruido ambiental una sola vez al arrancar."""
+    print("🎙️  Calibrando micrófono...")
+    with _microphone as source:
+        _recognizer.adjust_for_ambient_noise(source, duration=1.0)
+    print(f"✅ Umbral de energía: {int(_recognizer.energy_threshold)}")
+
+
+def escuchar_comando(timeout=8, phrase_limit=12):
     """Escucha el micrófono y retorna el texto reconocido en minúsculas."""
-    r = sr.Recognizer()
-    mic = sr.Microphone()
     try:
-        with mic as source:
-            r.adjust_for_ambient_noise(source, duration=0.3)
-            audio = r.listen(source, timeout=timeout, phrase_time_limit=phrase_limit)
-            texto = r.recognize_google(audio, language=LANG)
-            print(f"🎤 Escuché: '{texto}'")
-            return texto.lower()
-    except sr.WaitTimeoutError:
-        return None
-    except sr.UnknownValueError:
-        return None
+        with _microphone as source:
+            audio = _recognizer.listen(source, timeout=timeout,
+                                       phrase_time_limit=phrase_limit)
+        texto = _recognizer.recognize_google(audio, language=LANG)
+        print(f"🎤 Escuché: '{texto}'")
+        return texto.lower()
     except Exception as e:
         print(f"🚨 Error de audio: {e}")
         return None
@@ -283,6 +297,7 @@ def main_jarvis_loop():
     print("✨  Asistente JARVIS iniciado.")
     print("===========================================\n")
 
+    _calibrar_microfono()
     inicio_automatico()
     hablar("Sistema iniciado. Listo para escuchar, señor Maxi.")
 
