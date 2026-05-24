@@ -30,6 +30,8 @@ DisableWelcomePage=no
 PrivilegesRequired=admin
 UninstallDisplayName={#AppName}
 ShowTasksTreeLines=yes
+SetupIconFile=icon.ico
+UninstallDisplayIcon={app}\icon.ico
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
@@ -51,16 +53,18 @@ Source: "interfaz.py";     DestDir: "{app}"; Flags: ignoreversion
 Source: "updater.py";      DestDir: "{app}"; Flags: ignoreversion
 Source: "commands.json";   DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
 Source: "version.json";    DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
+Source: "icon.ico";        DestDir: "{app}"; Flags: ignoreversion
+Source: "icon.png";        DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Escritorio
-Name: "{autodesktop}\JARVIS Asistente"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"""; Comment: "Iniciar JARVIS Asistente de Voz"; Tasks: desktop
-Name: "{autodesktop}\Panel de Control JARVIS"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\gui_launcher.vbs"""; WorkingDir: "{app}"; Comment: "Abrir panel de control de JARVIS"; Tasks: desktop
+Name: "{autodesktop}\JARVIS Asistente"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"""; IconFilename: "{app}\icon.ico"; Comment: "Iniciar JARVIS Asistente de Voz"; Tasks: desktop
+Name: "{autodesktop}\Panel de Control JARVIS"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\gui_launcher.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Comment: "Abrir panel de control de JARVIS"; Tasks: desktop
 ; Menú Inicio
-Name: "{group}\JARVIS Asistente";                 Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"""; Comment: "Iniciar JARVIS"
-Name: "{group}\Panel de Control JARVIS";           Filename: "{sys}\wscript.exe"; Parameters: """{app}\gui_launcher.vbs"""; WorkingDir: "{app}"; Comment: "Panel gráfico de JARVIS"
+Name: "{group}\JARVIS Asistente";                 Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"""; IconFilename: "{app}\icon.ico"; Comment: "Iniciar JARVIS"
+Name: "{group}\Panel de Control JARVIS";           Filename: "{sys}\wscript.exe"; Parameters: """{app}\gui_launcher.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Comment: "Panel gráfico de JARVIS"
 Name: "{group}\Editar configuración (config.py)"; Filename: "{app}\config.py"
-Name: "{group}\Desinstalar JARVIS";               Filename: "{uninstallexe}"
+Name: "{group}\Desinstalar JARVIS";               Filename: "{uninstallexe}"; IconFilename: "{app}\icon.ico"
 
 [Registry]
 Root: HKLM; Subkey: "Software\JARVIS"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey

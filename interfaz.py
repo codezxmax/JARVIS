@@ -318,6 +318,15 @@ class JarvisGUI(tk.Tk):
         self.title("JARVIS — Panel de Control")
         self.configure(bg=BG)
         self.geometry("920x650")
+        # Icono de la ventana
+        _icon_path = os.path.join(BASE_DIR, "icon.png")
+        if os.path.exists(_icon_path):
+            try:
+                _img = tk.PhotoImage(file=_icon_path)
+                self.iconphoto(True, _img)
+                self._icon_img = _img  # evitar garbage collection
+            except Exception:
+                pass
         self.minsize(800, 520)
         self.commands    = load_commands()
         self.jarvis_proc = None
