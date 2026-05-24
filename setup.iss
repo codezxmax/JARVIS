@@ -39,8 +39,8 @@ WelcomeLabel1=Bienvenido al instalador de JARVIS
 WelcomeLabel2=Este asistente instalará JARVIS Asistente de Voz en su equipo.%n%nJARVIS escucha tu voz y puede:%n%n  • Activarse al decir "Hola Jarvis"%n  • Abrir Chrome, Gmail y tu sistema interno%n  • Controlar Spotify con la voz%n  • Iniciarse automáticamente con Windows%n%nSe recomienda cerrar todas las aplicaciones antes de continuar.
 
 [Tasks]
-Name: "startup"; Description: "Iniciar JARVIS automáticamente con Windows"; GroupDescription: "Opciones de inicio:"; Flags: checked
-Name: "desktop"; Description: "Crear acceso directo en el escritorio";       GroupDescription: "Accesos directos:"; Flags: checked
+Name: "startup"; Description: "Iniciar JARVIS automáticamente con Windows"; GroupDescription: "Opciones de inicio:"
+Name: "desktop"; Description: "Crear acceso directo en el escritorio";       GroupDescription: "Accesos directos:"
 
 [Files]
 ; Archivos principales — config.py solo se copia si no existe ya
