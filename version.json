@@ -1,6 +1,6 @@
 {
   "version": "2.0",
   "release_date": "2026-05-24",
-  "download_url": "",
+  "download_url": "https://github.com/codezxmax/JARVIS/releases/latest/download/JARVIS_Installer.exe",
   "changelog": "Versión con interfaz gráfica, comandos personalizables y auto-actualización."
 }
