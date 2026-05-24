@@ -1,0 +1,49 @@
+[
+  {
+    "id": "cmd-001",
+    "nombre": "Modo Café",
+    "trigger": "modo cafe",
+    "accion": "builtin_modo_cafe",
+    "params": {},
+    "respuesta": "Activando modo café, señor Maxi.",
+    "activo": true
+  },
+  {
+    "id": "cmd-002",
+    "nombre": "Pausar música",
+    "trigger": "pausa la musica",
+    "accion": "media_play_pause",
+    "params": {},
+    "respuesta": "Música pausada, señor Maxi.",
+    "activo": true
+  },
+  {
+    "id": "cmd-003",
+    "nombre": "Música favorita",
+    "trigger": "musica que me gusta",
+    "accion": "reproducir_spotify",
+    "params": {
+      "uri": "spotify:playlist:37i9dQZF1F5p3rmiWPIYgZ"
+    },
+    "respuesta": "Poniendo tu playlist favorita.",
+    "activo": true
+  },
+  {
+    "id": "cmd-004",
+    "nombre": "Siguiente canción",
+    "trigger": "siguiente cancion",
+    "accion": "media_next",
+    "params": {},
+    "respuesta": "Siguiente pista.",
+    "activo": true
+  },
+  {
+    "id": "cmd-005",
+    "nombre": "Canción anterior",
+    "trigger": "cancion anterior",
+    "accion": "media_prev",
+    "params": {},
+    "respuesta": "Pista anterior.",
+    "activo": true
+  }
+]

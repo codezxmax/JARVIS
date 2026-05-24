@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Inno Setup output
+dist/
+*.exe
+!JARVIS_Installer_*.exe
+
+# Configuración personal (credenciales y paths de cada PC)
+jarvis_settings.json
+config.py
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini
