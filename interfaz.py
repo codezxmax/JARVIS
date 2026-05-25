@@ -11,6 +11,13 @@ import subprocess
 import threading
 import queue
 import sys
+import ctypes
+
+# Fijar AppUserModelID → Windows mostrará el ícono de JARVIS en la barra de tareas
+try:
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Maxi.JARVIS.AsistenteVoz.2")
+except Exception:
+    pass
 
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 COMMANDS_FILE = os.path.join(BASE_DIR, "commands.json")
@@ -325,15 +332,18 @@ class JarvisGUI(tk.Tk):
         self.title("JARVIS — Panel de Control")
         self.configure(bg=BG)
         self.geometry("920x650")
-        # Icono de la ventana
-        _icon_path = os.path.join(BASE_DIR, "icon.png")
-        if os.path.exists(_icon_path):
-            try:
-                _img = tk.PhotoImage(file=_icon_path)
+        # Icono de la ventana (usa .ico para barra de tareas y título)
+        _ico_path = os.path.join(BASE_DIR, "icon.ico")
+        _png_path = os.path.join(BASE_DIR, "icon.png")
+        try:
+            if os.path.exists(_ico_path):
+                self.iconbitmap(_ico_path)
+            elif os.path.exists(_png_path):
+                _img = tk.PhotoImage(file=_png_path)
                 self.iconphoto(True, _img)
-                self._icon_img = _img  # evitar garbage collection
-            except Exception:
-                pass
+                self._icon_img = _img
+        except Exception:
+            pass
         self.minsize(800, 520)
         self.commands    = load_commands()
         self.jarvis_proc = None
