@@ -10,8 +10,18 @@ import threading
 import tempfile
 import pyttsx3
 import config
+import random
+from datetime import datetime
 from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+
+# Forzar stdout UTF-8 para emojis y acentos en la consola de la GUI
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 # =========================================================
 # CONFIGURACIÓN DINÁMICA (interfaz gráfica → jarvis_settings.json)
@@ -44,6 +54,71 @@ VOICE_NAME = _s.get("voice",   "Auto (español preferido)")
 KEYWORD    = _s.get("keyword", "hola jarvis")
 LANG       = _s.get("lang",    "es-ES")
 SALUDO     = _s.get("saludo",  "Hola señor Maxi, ¿cómo está su día? ¿Qué necesita de mí?")
+NOMBRE     = _s.get("nombre",  "señor Maxi")
+
+# =========================================================
+# RESPUESTAS ALEATORIAS Y PLÁTICAS
+# =========================================================
+
+_GREETINGS_RESP = [
+    "A sus órdenes. ¿En qué le puedo ayudar?",
+    "Aquí estoy, siempre listo para servirle. ¿Qué necesita?",
+    "Dígame, esperando instrucciones.",
+    "¿Qué manda? Listo para trabajar.",
+    "Presente. ¿En qué le ayudo hoy?",
+    "Buenas, ¿en qué puedo servirle?",
+    "A la orden, jefe. ¿Qué necesita?",
+]
+
+_IDLE_MSGS = [
+    "Solo confirmando que sigo activo y operativo.",
+    "Todo tranquilo por aquí. Listo cuando me necesite.",
+    "Sistemas en línea. Aquí estaré cuando me llame.",
+    "¿Necesita algo? Aquí estoy.",
+    "Escaneando el ambiente. Sin novedades.",
+]
+
+# (triggers, respuestas) — respuestas=None → handler especial
+_QA_PAIRS = [
+    (("cómo estás", "como estas", "cómo te va", "como te va", "qué tal", "que tal"),
+     ("Funcionando al cien por ciento, gracias por preguntar.",
+      "Excelente, todos los sistemas operativos.",
+      "Muy bien, gracias. Listo para servirle.")),
+    (("qué hora es", "que hora es", "dime la hora", "qué horas son"),
+     None),  # handler especial: hora actual
+    (("qué día es", "que dia es", "qué fecha", "que fecha", "qué día"),
+     None),  # handler especial: fecha actual
+    (("quién eres", "quien eres", "qué eres", "que eres"),
+     ("Soy JARVIS, su asistente personal de voz. Aquí para servirle.",
+      "Soy su asistente de inteligencia artificial. A sus órdenes.")),
+    (("gracias", "muchas gracias", "te lo agradezco"),
+     ("Para eso estoy. A sus órdenes.",
+      "Con gusto. ¿Algo más?",
+      "No hay de qué. Siempre a su servicio.")),
+    (("muy bien", "excelente trabajo", "bien hecho", "lo hiciste bien"),
+     ("Gracias, hago lo mejor que puedo.",
+      "Siempre dando el máximo para usted.",
+      "Me alegra escuchar eso.")),
+    (("hasta luego", "adiós", "adios", "nos vemos", "chao"),
+     ("Hasta luego. Aquí estaré cuando me necesite.",
+      "Hasta pronto.",
+      "Que le vaya bien.")),
+    (("cuántos años tienes", "cuantos anos tienes", "qué edad tienes"),
+     ("Soy una inteligencia artificial. Técnicamente no tengo edad.",
+      "Fui creado hace poco. Aún estoy aprendiendo.")),
+    (("eres inteligente", "qué inteligente", "que inteligente", "eres listo"),
+     ("Hago lo que puedo con lo que me programaron.",
+      "Intento serlo para servirle mejor.")),
+    (("qué puedes hacer", "que puedes hacer", "qué sabes", "que sabes hacer"),
+     ("Puedo activar el modo café, controlar Spotify, buscar música, "
+      "suspender el PC, abrir sitios web, y mucho más.",)),
+    (("cuanto es", "cuánto es", "cálcula", "calcula"),
+     None),  # handler especial: calculadora básica
+]
+
+# Tiempo de inactividad antes de enviar mensaje idle (segundos)
+_IDLE_INTERVAL = 12 * 60  # 12 minutos
+_last_interaction = 0.0    # se inicializa al arrancar
 
 # Archivo de señal IPC: jarvis.py escribe aquí su estado para que la GUI lo muestre
 _STATE_FILE = os.path.join(BASE_DIR, ".jarvis_state")
@@ -113,10 +188,23 @@ else:
 
 def hablar(texto):
     """Jarvis responde con voz y muestra el texto en consola."""
-    print(f"🔊 JARVIS: {texto}")
+    print(f"[TTS] JARVIS: {texto}")
     _write_state("hablando")
-    engine.say(texto)
-    engine.runAndWait()
+    try:
+        engine.say(texto)
+        engine.runAndWait()
+    except Exception as _e:
+        print(f"[ERROR TTS] {_e}")
+        # Intentar reiniciar el motor si falla
+        try:
+            global engine
+            engine = pyttsx3.init()
+            engine.setProperty('rate',   VOICE_RATE)
+            engine.setProperty('volume', VOICE_VOL)
+            engine.say(texto)
+            engine.runAndWait()
+        except Exception as _e2:
+            print(f"[ERROR TTS reinicio] {_e2}")
     _write_state("esperando")
 
 
@@ -124,29 +212,52 @@ def hablar(texto):
 # CONTROL DE SPOTIFY
 # =========================================================
 
+def _send_media_key(vk_code):
+    """Envía una tecla de medios (keydown + keyup)."""
+    ctypes.windll.user32.keybd_event(vk_code, 0, 0, 0)
+    time.sleep(0.05)
+    ctypes.windll.user32.keybd_event(vk_code, 0, 2, 0)
+
+
 def pausar_spotify():
     """Pausa o reanuda Spotify con la tecla de medios del sistema."""
-    print("⏸️  Enviando pausa a Spotify...")
-    ctypes.windll.user32.keybd_event(0xB3, 0, 0, 0)
-    time.sleep(0.05)
-    ctypes.windll.user32.keybd_event(0xB3, 0, 2, 0)
-    hablar("Música pausada, señor Maxi.")
+    print("[SPOTIFY] Enviando pausa...")
+    _send_media_key(0xB3)
+    hablar(f"Música pausada, {NOMBRE}.")
 
 
 def reproducir_back_in_black():
     """Abre Spotify con Back in Black de AC/DC."""
-    print("🎸 Abriendo Back in Black...")
+    print("[SPOTIFY] Abriendo Back in Black...")
     subprocess.Popen(["start", config.SPOTIFY_BACK_IN_BLACK], shell=True)
+    time.sleep(2.5)
+    _send_media_key(0xB3)
 
 
 def reproducir_musica_favorita():
-    """Abre la playlist favorita 'Tus Me Gusta'."""
-    print("🎵 Abriendo playlist favorita...")
+    """Abre la playlist favorita y fuerza reproducción."""
+    print("[SPOTIFY] Abriendo playlist favorita...")
     if "REEMPLAZA" in config.SPOTIFY_PLAYLIST_FAVORITA:
-        hablar("Señor Maxi, aún no configuró el identificador de su playlist. Edite el archivo config punto py.")
+        hablar(f"Aún no configuró el identificador de su playlist. Edite el archivo config punto py, {NOMBRE}.")
         return
     subprocess.Popen(["start", config.SPOTIFY_PLAYLIST_FAVORITA], shell=True)
-    hablar("Claro, poniendo su música favorita.")
+    hablar(f"Claro, poniendo su música favorita, {NOMBRE}.")
+    time.sleep(3.0)   # esperar a que Spotify enfoque y cargue
+    _send_media_key(0xB3)   # forzar reproducción
+
+
+def buscar_musica_spotify(query: str):
+    """Busca una canción/artista en Spotify y la reproduce."""
+    if not query:
+        hablar(f"¿Qué canción o artista quiere que busque, {NOMBRE}?")
+        return
+    print(f"[SPOTIFY] Buscando: {query}")
+    encoded = query.strip().replace(" ", "%20")
+    uri = f"spotify:search:{encoded}"
+    subprocess.Popen(["start", uri], shell=True)
+    hablar(f"Buscando {query} en Spotify.")
+    time.sleep(3.0)
+    _send_media_key(0xB3)   # reproducir primer resultado
 
 
 # =========================================================
@@ -154,14 +265,19 @@ def reproducir_musica_favorita():
 # =========================================================
 
 def activar_modo_cafe():
-    """Activa todo: Chrome con Gmail/Google + sistema interno + música."""
-    hablar("Activando modo café. Un momento, señor Maxi.")
+    """Activa todo: Chrome con sitios configurados + sistema interno + música."""
+    hablar(f"Activando modo café. Un momento, {NOMBRE}.")
+    # 1. Abrir Chrome (una única ventana nueva con todas las pestañas)
     abrir_chrome_con_sitios()
     time.sleep(2)
+    # 2. Sistema interno (si está configurado)
     abrir_sistema_interno()
     time.sleep(1)
+    # 3. Música: pausar lo que esté sonando, luego abrir la playlist de trabajo
+    _send_media_key(0xB3)   # pausa (por si hay algo sonando)
+    time.sleep(0.5)
     reproducir_back_in_black()
-    hablar("Todo listo señor Maxi. Que tenga un excelente día!")
+    hablar(f"Todo listo {NOMBRE}. Que tenga un excelente día!")
 
 
 # =========================================================
@@ -169,16 +285,22 @@ def activar_modo_cafe():
 # =========================================================
 
 def abrir_chrome_con_sitios():
-    """Abre Chrome con los sitios configurados en pestañas."""
-    print("🌐 Abriendo Chrome...")
+    """Abre Chrome con los sitios configurados en UNA sola ventana nueva."""
+    print("[CHROME] Abriendo sitios...")
+    if not config.SITIOS_WEB:
+        print("[CHROME] SITIOS_WEB está vacío. Nada que abrir.")
+        return
     try:
         if os.path.exists(config.RUTA_CHROME):
-            subprocess.Popen([config.RUTA_CHROME] + config.SITIOS_WEB)
+            # --new-window + todas las URLs → una ventana con N pestañas
+            subprocess.Popen([config.RUTA_CHROME, "--new-window"] + config.SITIOS_WEB)
         else:
-            subprocess.Popen(["start", "chrome"] + config.SITIOS_WEB, shell=True)
-        print(f"✅ Chrome abierto con {len(config.SITIOS_WEB)} pestañas.")
+            # Fallback: usar 'start' de Windows
+            args = ["start", "chrome", "--new-window"] + config.SITIOS_WEB
+            subprocess.Popen(args, shell=True)
+        print(f"[CHROME] Abierto con {len(config.SITIOS_WEB)} pestaña(s).")
     except Exception as e:
-        print(f"❌ Error al abrir Chrome: {e}")
+        print(f"[ERROR Chrome] {e}")
 
 
 def abrir_sistema_interno():
@@ -299,7 +421,7 @@ def _manejar_suspension(cmd_confirmacion: str | None):
                 ("sí", "si", "sí porfa", "si porfa", "dale", "confirmo",
                  "claro", "adelante", "hazlo", "procede")
         ):
-            hablar("Entendido. Hasta la próxima, señor Maxi.")
+            hablar(f"Entendido. Hasta la próxima, {NOMBRE}.")
             time.sleep(1.5)
             _suspender_pc()
             return True
@@ -364,7 +486,7 @@ def _ejecutar_accion(cmd_json):
     elif accion == "builtin_suspender":
         global _pendiente_suspension
         _pendiente_suspension = True
-        hablar("¿De verdad señor Maxi quiere ejecutar esa orden?")
+        hablar(f"¿De verdad {NOMBRE} quiere ejecutar esa orden?")
         return
 
     # solo_hablar y cualquier otra acción: solo responde con voz
@@ -378,31 +500,46 @@ def _ejecutar_accion(cmd_json):
 
 def procesar_comando(cmd):
     """Analiza el texto y ejecuta la acción correspondiente."""
-    global _pendiente_suspension
+    global _pendiente_suspension, _last_interaction
+    _last_interaction = time.time()
 
     if not cmd:
         if _pendiente_suspension:
-            # timeout esperando confirmación: cancelar
             _pendiente_suspension = False
             hablar("No escuché confirmación. Suspensión cancelada.")
         else:
-            hablar("No escuché ningún comando, señor Maxi. ¿Puede repetir?")
+            hablar(f"No escuché ningún comando, {NOMBRE}. ¿Puede repetir?")
         return
 
-    # ── Si hay confirmación pendiente de suspensión ───────────────────────────
+    # ── Confirmación pendiente de suspensión ──────────────────────────────────
     if _pendiente_suspension:
         _manejar_suspension(cmd)
         return
 
-    # ── Comando builtin: suspender ─────────────────────────────────────────────
+    # ── Suspender PC ──────────────────────────────────────────────────────────
     _cmd_norm = cmd.replace("á","a").replace("é","e").replace("í","i")\
                    .replace("ó","o").replace("ú","u")
     if any(x in _cmd_norm for x in
            ("suspende", "suspender", "duerme el pc", "pon a dormir",
             "modo suspension", "modo suspensión")):
         _pendiente_suspension = True
-        hablar("¿De verdad señor Maxi quiere ejecutar esa orden?")
+        hablar(f"¿De verdad {NOMBRE} quiere ejecutar esa orden?")
         return
+
+    # ── Búsqueda en Spotify ───────────────────────────────────────────────────
+    _busqueda_kw = (
+        "busca la música", "busca la musica",
+        "busca la canción", "busca la cancion",
+        "busca música", "busca musica",
+        "busca en spotify", "pon la canción", "pon la cancion",
+        "reproduce la canción", "reproduce la cancion",
+        "reproduce la música", "reproduce la musica",
+    )
+    for bkw in _busqueda_kw:
+        if bkw in cmd:
+            query = cmd.split(bkw, 1)[-1].strip().strip("\"' ")
+            buscar_musica_spotify(query)
+            return
 
     # ── Comandos personalizados del JSON (tienen prioridad) ──────────────────
     for custom in _load_commands_json():
@@ -413,33 +550,97 @@ def procesar_comando(cmd):
             _ejecutar_accion(custom)
             return
 
-    # ── Comandos integrados (fallback si no hay JSON) ─────────────────────────
+    # ── Comandos integrados (fallback) ────────────────────────────────────────
     if "modo cafe" in cmd or "modo café" in cmd:
         activar_modo_cafe()
+        return
 
-    elif ("pausa" in cmd or "para" in cmd) and \
-         ("musica" in cmd or "música" in cmd or "cancion" in cmd or "canción" in cmd):
+    if (("pausa" in cmd or "para" in cmd) and
+            ("musica" in cmd or "música" in cmd or
+             "cancion" in cmd or "canción" in cmd)):
         pausar_spotify()
+        return
 
-    elif "musica que me gusta" in cmd or "música que me gusta" in cmd or "mis favoritas" in cmd:
+    if ("musica que me gusta" in cmd or "música que me gusta" in cmd or
+            "mis favoritas" in cmd or "mi favorita" in cmd):
         reproducir_musica_favorita()
+        return
 
-    else:
-        hablar("No reconocí ese comando, señor Maxi. Puede decir: modo café, pausa la música, suspende el PC, o coloca la música que me gusta.")
+    # ── Q&A y pláticas ────────────────────────────────────────────────────────
+    for triggers, respuestas in _QA_PAIRS:
+        if any(t in cmd for t in triggers):
+            if respuestas is None:
+                _now = datetime.now()
+                _dias  = ["lunes","martes","miércoles","jueves",
+                          "viernes","sábado","domingo"]
+                _meses = ["enero","febrero","marzo","abril","mayo",
+                          "junio","julio","agosto","septiembre",
+                          "octubre","noviembre","diciembre"]
+                if any(t in cmd for t in ("hora", "horas")):
+                    hablar(f"Son las {_now.strftime('%H')} "
+                           f"y {int(_now.strftime('%M'))} minutos.")
+                elif any(t in cmd for t in ("día","dia","fecha")):
+                    hablar(f"Hoy es {_dias[_now.weekday()]}, {_now.day} "
+                           f"de {_meses[_now.month-1]} de {_now.year}.")
+                else:
+                    hablar("Disculpe, no entendí bien. ¿Puede repetir?")
+            else:
+                hablar(random.choice(respuestas))
+            return
+
+    # ── Saludos sueltos ───────────────────────────────────────────────────────
+    _hora_act = datetime.now().hour
+    _saludo_hora = (
+        "buenas noches" if _hora_act >= 21 or _hora_act < 6
+        else "buenas tardes" if _hora_act >= 13
+        else "buenos días"
+    )
+    if any(t in cmd for t in ("hola", "hey", "buenas", "buenos días",
+                               "buenas tardes", "buenas noches")):
+        opciones = [
+            f"¡{_saludo_hora}, {NOMBRE}! ¿En qué le ayudo?",
+            f"Hola {NOMBRE}, ¿cómo está su día?",
+            f"Aquí estoy, {NOMBRE}. Esperando sus órdenes.",
+            f"¿Qué manda, {NOMBRE}?",
+        ]
+        hablar(random.choice(opciones))
+        return
+
+    # ── Fallback ──────────────────────────────────────────────────────────────
+    hablar(f"No reconocí ese comando, {NOMBRE}. Puede decir: modo café, "
+           f"pausa la música, suspende el PC, o coloca la música que me gusta.")
 
 
 # =========================================================
 # BUCLE PRINCIPAL
 # =========================================================
 
+def _idle_thread():
+    """Hilo daemon: manda un mensaje idle si hay N minutos sin actividad."""
+    global _last_interaction
+    while True:
+        time.sleep(60)
+        try:
+            if time.time() - _last_interaction > _IDLE_INTERVAL:
+                hablar(random.choice(_IDLE_MSGS))
+                _last_interaction = time.time()
+        except Exception:
+            pass
+
+
 def main_jarvis_loop():
+    global _last_interaction
     print("===========================================")
-    print("✨  Asistente JARVIS iniciado.")
+    print("[JARVIS] Asistente iniciado.")
     print("===========================================\n")
 
     _calibrar_microfono()
     inicio_automatico()
-    hablar("Sistema iniciado. Listo para escuchar, señor Maxi.")
+    _last_interaction = time.time()
+    hablar(f"Sistema iniciado. Listo para escuchar, {NOMBRE}.")
+
+    # Iniciar hilo de mensajes idle
+    threading.Thread(target=_idle_thread, daemon=True).start()
 
     _write_state("esperando")
 
@@ -447,19 +648,18 @@ def main_jarvis_loop():
         cmd = escuchar_comando(timeout=6)
 
         if cmd is None:
-            # Si había confirmación pendiente y no llegó respuesta → cancelar
             if _pendiente_suspension:
                 procesar_comando(None)
             continue
 
-        # ── Si hay confirmación pendiente de suspensión ───────────────────
+        # Confirmación de suspensión pendiente
         if _pendiente_suspension:
             procesar_comando(cmd)
             continue
 
-        # Activación principal: palabra clave configurable
+        # Activación por keyword configurable
         if KEYWORD in cmd:
-            hablar(SALUDO)
+            hablar(random.choice(_GREETINGS_RESP))
             followup = escuchar_comando(timeout=10, phrase_limit=15)
             procesar_comando(followup)
 
@@ -474,5 +674,5 @@ if __name__ == "__main__":
     try:
         main_jarvis_loop()
     except KeyboardInterrupt:
-        hablar("Desconectando. Hasta pronto, señor Maxi.")
-        print("\n\n👋 JARVIS desconectado.")
+        hablar(f"Desconectando. Hasta pronto, {NOMBRE}.")
+        print("\n[JARVIS] Desconectado.")

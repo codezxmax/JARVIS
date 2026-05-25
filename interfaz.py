@@ -347,10 +347,10 @@ class JarvisGUI(tk.Tk):
         self._poll_log()
         self._setup_tray()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        # Comprobar actualizaciones en segundo plano (no bloquea el inicio)
+        # Comprobar actualizaciones 8 segundos después del inicio (no bloquea UI)
         if _HAS_UPDATER:
-            threading.Thread(target=self._check_update_async,
-                             daemon=True).start()
+            self.after(8000, lambda: threading.Thread(
+                target=self._check_update_async, daemon=True).start())
 
     # ── Tema ──────────────────────────────────────────────────────────────────
     def _apply_theme(self):
@@ -600,6 +600,14 @@ class JarvisGUI(tk.Tk):
                  insertbackground=FG, relief="flat", font=FONT,
                  bd=6, width=44).pack(side="left", padx=4)
 
+        # ── Nombre del usuario
+        sec("👤  Nombre del usuario")
+        f = row("Cómo te llama JARVIS (ej. señor García)")
+        self.var_nombre = tk.StringVar(value="señor Maxi")
+        tk.Entry(f, textvariable=self.var_nombre, bg=BG3, fg=FG,
+                 insertbackground=FG, relief="flat", font=FONT,
+                 bd=6, width=26).pack(side="left", padx=4)
+
         # ── Auto-actualización
         sec("🔄  Auto-actualización")
         f = row("URL del version.json remoto")
@@ -816,6 +824,8 @@ class JarvisGUI(tk.Tk):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
@@ -931,6 +941,7 @@ class JarvisGUI(tk.Tk):
         self.var_saludo.set(
             s.get("saludo",
                   "Hola señor Maxi, ¿cómo está su día? ¿Qué necesita de mí?"))
+        self.var_nombre.set(s.get("nombre", "señor Maxi"))
         _DEF = "https://raw.githubusercontent.com/codezxmax/JARVIS/master/version.json"
         self.var_update_url.set(s.get("update_url", "") or _DEF)
 
@@ -942,6 +953,7 @@ class JarvisGUI(tk.Tk):
             "keyword":    self.var_keyword.get().lower().strip(),
             "lang":       self.var_lang.get(),
             "saludo":     self.var_saludo.get().strip(),
+            "nombre":     self.var_nombre.get().strip() or "señor Maxi",
             "update_url": self.var_update_url.get().strip(),
         }
         save_settings(data)
