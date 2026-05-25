@@ -3,10 +3,15 @@ import subprocess
 import time
 import pyautogui
 import ctypes
+import ctypes.wintypes
 import os
 import json
+import threading
+import tempfile
 import pyttsx3
 import config
+from comtypes import CLSCTX_ALL
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 # =========================================================
 # CONFIGURACIÓN DINÁMICA (interfaz gráfica → jarvis_settings.json)
@@ -40,6 +45,50 @@ KEYWORD    = _s.get("keyword", "hola jarvis")
 LANG       = _s.get("lang",    "es-ES")
 SALUDO     = _s.get("saludo",  "Hola señor Maxi, ¿cómo está su día? ¿Qué necesita de mí?")
 
+# Archivo de señal IPC: jarvis.py escribe aquí su estado para que la GUI lo muestre
+_STATE_FILE = os.path.join(BASE_DIR, ".jarvis_state")
+
+def _write_state(state: str):
+    """Escribe el estado actual en .jarvis_state (GUI lo lee cada 200 ms)."""
+    try:
+        with open(_STATE_FILE, "w", encoding="utf-8") as f:
+            f.write(state)
+    except Exception:
+        pass
+
+# =========================================================
+# CONTROL DE VOLUMEN DEL SISTEMA (pycaw)
+# =========================================================
+
+try:
+    _devices  = AudioUtilities.GetSpeakers()
+    _interface = _devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+    _volume_ctrl = _interface.QueryInterface(IAudioEndpointVolume)
+    _HAS_VOLUME = True
+except Exception:
+    _HAS_VOLUME = False
+    _volume_ctrl = None
+
+_LISTEN_DUCK = 0.20   # nivel al que se baja el volumen mientras escucha (0-1)
+
+def _get_master_volume() -> float:
+    """Devuelve el nivel de volumen maestro actual (0.0–1.0)."""
+    if _HAS_VOLUME and _volume_ctrl:
+        try:
+            return _volume_ctrl.GetMasterVolumeLevelScalar()
+        except Exception:
+            pass
+    return 1.0
+
+def _set_master_volume(level: float):
+    """Fija el volumen maestro al nivel indicado (0.0–1.0)."""
+    if _HAS_VOLUME and _volume_ctrl:
+        try:
+            _volume_ctrl.SetMasterVolumeLevelScalar(
+                max(0.0, min(1.0, level)), None)
+        except Exception:
+            pass
+
 # =========================================================
 # MOTOR DE VOZ TTS
 # =========================================================
@@ -65,8 +114,10 @@ else:
 def hablar(texto):
     """Jarvis responde con voz y muestra el texto en consola."""
     print(f"🔊 JARVIS: {texto}")
+    _write_state("hablando")
     engine.say(texto)
     engine.runAndWait()
+    _write_state("esperando")
 
 
 # =========================================================
@@ -168,33 +219,94 @@ def inicio_automatico():
 _recognizer = sr.Recognizer()
 _microphone = sr.Microphone()
 
-# pause_threshold: cuánto silencio (seg) hace falta para dar la frase por terminada.
-# El defecto (0.8 s) corta demasiado rápido; con 1.5 s el usuario puede hablar
-# con pausas naturales sin que JARVIS lo interrumpa.
-_recognizer.pause_threshold       = 1.5
-_recognizer.non_speaking_duration = 0.5
-_recognizer.dynamic_energy_threshold = True
+# ── Parámetros de detección (optimizados) ────────────────────────────────
+# pause_threshold: cuánto silencio hace falta para cerrar la frase (1.5 s = natural)
+_recognizer.pause_threshold              = 1.5
+# non_speaking_duration: cuánto silencio al INICIO es ignorado
+_recognizer.non_speaking_duration        = 0.4
+# Umbral de energía: 300 = sensible (habla normal); sube si hay mucho ruido
+_recognizer.energy_threshold             = 300
+# Ajuste dinámico habilitado pero amortiguado (0.10 = muy suave → menos falsos neg.)
+_recognizer.dynamic_energy_threshold     = True
+_recognizer.dynamic_energy_adjustment_damping = 0.10
+# Multiplicador por sobre el nivel de ruido ambiente para detectar habla
+_recognizer.dynamic_energy_ratio         = 1.5
 
 def _calibrar_microfono():
     """Calibra el umbral de ruido ambiental una sola vez al arrancar."""
-    print("🎙️  Calibrando micrófono...")
+    print("🎙️  Calibrando micrófono (2 s)...")
     with _microphone as source:
-        _recognizer.adjust_for_ambient_noise(source, duration=1.0)
-    print(f"✅ Umbral de energía: {int(_recognizer.energy_threshold)}")
+        _recognizer.adjust_for_ambient_noise(source, duration=2.0)
+    print(f"✅ Umbral de energía calibrado: {int(_recognizer.energy_threshold)}")
 
 
-def escuchar_comando(timeout=8, phrase_limit=12):
-    """Escucha el micrófono y retorna el texto reconocido en minúsculas."""
+def escuchar_comando(timeout=8, phrase_limit=15):
+    """Escucha el micrófono, baja el volumen mientras escucha y retorna el texto."""
+    vol_previo = _get_master_volume()
+    # Solo baja el volumen si hay algo sonando (volumen > duck level)
+    if vol_previo > _LISTEN_DUCK:
+        _set_master_volume(_LISTEN_DUCK)
+    _write_state("escuchando")
+    print("🎙️  [ESCUCHANDO]")
     try:
         with _microphone as source:
+            # Recalibrar ruido muy rápido (0.3 s) en cada escucha
+            _recognizer.adjust_for_ambient_noise(source, duration=0.3)
             audio = _recognizer.listen(source, timeout=timeout,
                                        phrase_time_limit=phrase_limit)
         texto = _recognizer.recognize_google(audio, language=LANG)
         print(f"🎤 Escuché: '{texto}'")
         return texto.lower()
+    except sr.WaitTimeoutError:
+        return None
+    except sr.UnknownValueError:
+        print("⚠️  No entendí lo que dijo.")
+        return None
     except Exception as e:
         print(f"🚨 Error de audio: {e}")
         return None
+    finally:
+        # Siempre restaurar el volumen original
+        _set_master_volume(vol_previo)
+        _write_state("esperando")
+        print("🔇  [LISTO]")
+
+
+# =========================================================
+# SUSPENDER / BLOQUEAR PC
+# =========================================================
+
+def _suspender_pc():
+    """Suspende el equipo (Sleep): lo pone en pantalla de inicio de sesión."""
+    print("💤 Suspendiendo el equipo...")
+    # Primero bloquea la sesión y luego suspende
+    ctypes.windll.user32.LockWorkStation()
+    time.sleep(1)
+    subprocess.Popen(["rundll32.exe", "powrprof.dll,SetSuspendState", "0", "1", "0"])
+
+
+_pendiente_suspension = False   # flag de confirmación
+
+
+def _manejar_suspension(cmd_confirmacion: str | None):
+    """Gestiona el flujo de confirmación para suspender el PC."""
+    global _pendiente_suspension
+    if _pendiente_suspension:
+        # Ya se pidió confirmación: ¿el usuario dice sí?
+        _pendiente_suspension = False
+        if cmd_confirmacion and any(
+            x in cmd_confirmacion for x in
+                ("sí", "si", "sí porfa", "si porfa", "dale", "confirmo",
+                 "claro", "adelante", "hazlo", "procede")
+        ):
+            hablar("Entendido. Hasta la próxima, señor Maxi.")
+            time.sleep(1.5)
+            _suspender_pc()
+            return True
+        else:
+            hablar("Suspensión cancelada. A sus órdenes.")
+            return True
+    return False
 
 
 # =========================================================
@@ -249,6 +361,12 @@ def _ejecutar_accion(cmd_json):
         time.sleep(0.05)
         ctypes.windll.user32.keybd_event(0xB1, 0, 2, 0)
 
+    elif accion == "builtin_suspender":
+        global _pendiente_suspension
+        _pendiente_suspension = True
+        hablar("¿De verdad señor Maxi quiere ejecutar esa orden?")
+        return
+
     # solo_hablar y cualquier otra acción: solo responde con voz
     if respuesta:
         hablar(respuesta)
@@ -260,8 +378,30 @@ def _ejecutar_accion(cmd_json):
 
 def procesar_comando(cmd):
     """Analiza el texto y ejecuta la acción correspondiente."""
+    global _pendiente_suspension
+
     if not cmd:
-        hablar("No escuché ningún comando, señor Maxi. ¿Puede repetir?")
+        if _pendiente_suspension:
+            # timeout esperando confirmación: cancelar
+            _pendiente_suspension = False
+            hablar("No escuché confirmación. Suspensión cancelada.")
+        else:
+            hablar("No escuché ningún comando, señor Maxi. ¿Puede repetir?")
+        return
+
+    # ── Si hay confirmación pendiente de suspensión ───────────────────────────
+    if _pendiente_suspension:
+        _manejar_suspension(cmd)
+        return
+
+    # ── Comando builtin: suspender ─────────────────────────────────────────────
+    _cmd_norm = cmd.replace("á","a").replace("é","e").replace("í","i")\
+                   .replace("ó","o").replace("ú","u")
+    if any(x in _cmd_norm for x in
+           ("suspende", "suspender", "duerme el pc", "pon a dormir",
+            "modo suspension", "modo suspensión")):
+        _pendiente_suspension = True
+        hablar("¿De verdad señor Maxi quiere ejecutar esa orden?")
         return
 
     # ── Comandos personalizados del JSON (tienen prioridad) ──────────────────
@@ -285,7 +425,7 @@ def procesar_comando(cmd):
         reproducir_musica_favorita()
 
     else:
-        hablar("No reconocí ese comando, señor Maxi. Puede decir: modo café, pausa la música, o coloca la música que me gusta.")
+        hablar("No reconocí ese comando, señor Maxi. Puede decir: modo café, pausa la música, suspende el PC, o coloca la música que me gusta.")
 
 
 # =========================================================
@@ -301,25 +441,33 @@ def main_jarvis_loop():
     inicio_automatico()
     hablar("Sistema iniciado. Listo para escuchar, señor Maxi.")
 
+    _write_state("esperando")
+
     while True:
-        print("🎙️  Escuchando...")
-        cmd = escuchar_comando(timeout=5)
+        cmd = escuchar_comando(timeout=6)
 
         if cmd is None:
+            # Si había confirmación pendiente y no llegó respuesta → cancelar
+            if _pendiente_suspension:
+                procesar_comando(None)
+            continue
+
+        # ── Si hay confirmación pendiente de suspensión ───────────────────
+        if _pendiente_suspension:
+            procesar_comando(cmd)
             continue
 
         # Activación principal: palabra clave configurable
         if KEYWORD in cmd:
             hablar(SALUDO)
-            print("🎙️  Esperando su orden...")
-            followup = escuchar_comando(timeout=8, phrase_limit=8)
+            followup = escuchar_comando(timeout=10, phrase_limit=15)
             procesar_comando(followup)
 
-        # Comandos directos (contiene "jarvis" sin el saludo completo)
+        # Comandos directos (contiene "jarvis")
         elif "jarvis" in cmd:
             procesar_comando(cmd)
 
-        time.sleep(0.3)
+        time.sleep(0.1)
 
 
 if __name__ == "__main__":

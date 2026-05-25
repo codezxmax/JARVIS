@@ -423,6 +423,7 @@ class JarvisGUI(tk.Tk):
         self._build_tab_commands()
         self._build_tab_settings()
         self._build_tab_console()
+        self._build_tab_help()
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     def _build_sidebar(self, parent):
@@ -450,6 +451,14 @@ class JarvisGUI(tk.Tk):
         self.btn_stop.configure(state="disabled")
 
         tk.Frame(sb, bg=BG3, height=1).pack(fill="x", padx=10, pady=10)
+
+        sec("ESTADO")
+        self._listening_var = tk.StringVar(value="⬜  En espera")
+        self.lbl_listening = tk.Label(
+            sb, textvariable=self._listening_var,
+            bg=BG2, fg=FG2, font=("Segoe UI", 10, "bold"),
+            wraplength=154, justify="center")
+        self.lbl_listening.pack(fill="x", padx=10, pady=(2, 8))
 
         sec("ÚLTIMA ORDEN")
         tk.Label(sb, textvariable=self._last_heard,
@@ -657,6 +666,80 @@ class JarvisGUI(tk.Tk):
         self.console.tag_configure("error", foreground=RED)
         self.console.tag_configure("info",  foreground=FG2)
 
+    # ── Tab: Ayuda ────────────────────────────────────────────────────────────
+    def _build_tab_help(self):
+        tab = tk.Frame(self.nb, bg=BG2)
+        self.nb.add(tab, text="  ❓ Ayuda  ")
+
+        vsb = ttk.Scrollbar(tab, orient="vertical")
+        vsb.pack(side="right", fill="y", pady=8, padx=(0, 8))
+
+        txt = tk.Text(tab, bg=BG2, fg=FG, font=FONT_MONO,
+                      wrap="word", relief="flat",
+                      yscrollcommand=vsb.set,
+                      padx=18, pady=14, cursor="arrow",
+                      state="normal")
+        txt.pack(side="left", fill="both", expand=True,
+                 padx=(8, 0), pady=8)
+        vsb.config(command=txt.yview)
+
+        txt.tag_configure("h1",   font=("Segoe UI", 15, "bold"), foreground=ACCENT)
+        txt.tag_configure("h2",   font=("Segoe UI", 10, "bold"), foreground=YELLOW)
+        txt.tag_configure("code", font=FONT_MONO,                foreground=GREEN,
+                          background=BG3)
+        txt.tag_configure("body", font=("Segoe UI", 10),         foreground=FG)
+        txt.tag_configure("dim",  font=("Segoe UI", 9),          foreground=FG2)
+
+        content = [
+            ("h1",   "🤖  Guía de uso de JARVIS\n\n"),
+
+            ("h2",   "▸  Activación\n"),
+            ("body", '  Diga "hola jarvis" o "jarvis" para activar el asistente.\n'
+                     '  Espere el indicador 🔴 ESCUCHANDO y luego dicte su orden.\n\n'),
+
+            ("h2",   "▸  Comandos de voz incorporados\n"),
+            ("code", '  "jarvis suspende"            '),
+            ("body", "→  Suspende el PC (pide confirmación)\n"),
+            ("code", '  "jarvis modo café"           '),
+            ("body", "→  Silencia notificaciones del sistema\n"),
+            ("code", '  "jarvis pausa la música"     '),
+            ("body", "→  Pausa / reanuda Spotify\n"),
+            ("code", '  "jarvis música que me gusta" '),
+            ("body", "→  Reproduce lista de favoritas\n\n"),
+
+            ("h2",   "▸  Confirmación de suspensión\n"),
+            ("body", '  Cuando JARVIS pregunte "¿de verdad quiere ejecutar esa orden?"\n'
+                     '  responda con: sí, sí porfa, dale, claro, confirmo, adelante...\n'
+                     '  Cualquier otra respuesta cancela la operación.\n\n'),
+
+            ("h2",   "▸  Comandos personalizados\n"),
+            ("body", '  Agréguelos desde la pestaña Comandos → botón Agregar.\n'
+                     '  Cada entrada tiene: nombre, frase activadora y acción.\n'
+                     '  Puede activar/desactivar comandos sin eliminarlos.\n\n'),
+
+            ("h2",   "▸  Actualización automática\n"),
+            ("body", '  Configure la URL del archivo version.json en\n'
+                     '  la pestaña Configuración.\n'),
+            ("dim",  '  Valor por defecto:\n'
+                     '  https://raw.githubusercontent.com/codezxmax/JARVIS/master/version.json\n\n'),
+
+            ("h2",   "▸  Indicadores de estado (sidebar)\n"),
+            ("body", '  🔴 ESCUCHANDO  →  micrófono activo, puede hablar\n'
+                     '  🔊 HABLANDO    →  JARVIS está respondiendo\n'
+                     '  ⬜ En espera   →  esperando activación\n\n'),
+
+            ("h2",   "▸  Consejos para mejor reconocimiento\n"),
+            ("body", '  • Hable a velocidad normal y con voz clara.\n'
+                     '  • Espere a que el indicador muestre 🔴 ESCUCHANDO.\n'
+                     '  • El volumen del sistema baja automáticamente al escuchar\n'
+                     '    y se restaura al terminar.\n'
+                     '  • Si hay errores de audio continuos, detenga y reinicie JARVIS.\n'
+                     '  • El micrófono se calibra al arrancar (2 segundos de silencio).\n'),
+        ]
+        for tag, text in content:
+            txt.insert("end", text, tag)
+        txt.configure(state="disabled")
+
     # ── CRUD de comandos ──────────────────────────────────────────────────────
     def _refresh_table(self):
         for row in self.tree.get_children():
@@ -758,27 +841,52 @@ class JarvisGUI(tk.Tk):
         self.lbl_status.configure(fg=RED)
         self.btn_start.configure(state="normal")
         self.btn_stop.configure(state="disabled")
+        self._set_listening_ui("esperando")
         self._update_tray_title(False)
+
+    def _set_listening_ui(self, state: str):
+        """Actualiza el indicador de estado del sidebar. state: escuchando|hablando|esperando"""
+        if state == "escuchando":
+            self._listening_var.set("🔴  ESCUCHANDO...")
+            self.lbl_listening.configure(fg="#ff4466")
+        elif state == "hablando":
+            self._listening_var.set("🔊  HABLANDO...")
+            self.lbl_listening.configure(fg=ACCENT)
+        else:
+            self._listening_var.set("⬜  En espera")
+            self.lbl_listening.configure(fg=FG2)
 
     def _read_output(self):
         for line in self.jarvis_proc.stdout:
             stripped = line.strip()
-            if "Escuché:" in stripped:
+            # ── Estado de escucha ─────────────────────────────────────────
+            if "[ESCUCHANDO]" in stripped:
+                self.after(0, self._set_listening_ui, "escuchando")
+                tag = "info"
+            elif "[LISTO]" in stripped:
+                self.after(0, self._set_listening_ui, "esperando")
+                tag = "info"
+            elif "JARVIS:" in stripped:
+                self.after(0, self._set_listening_ui, "hablando")
+                tag = "spoke"
+            # ── Otros mensajes ────────────────────────────────────────────
+            elif "Escuché:" in stripped:
                 tag = "heard"
                 heard = stripped.split("Escuché:")[-1].strip().strip("'\"")
                 self.after(0, lambda v=heard: self._last_heard.set(v))
-            elif "JARVIS:" in stripped:
-                tag = "spoke"
+                self.after(0, self._set_listening_ui, "esperando")
             elif "✅" in stripped:
                 tag = "ok"
             elif "⚠" in stripped:
                 tag = "warn"
             elif "❌" in stripped or "Error" in stripped:
                 tag = "error"
+                self.after(0, self._set_listening_ui, "esperando")
             else:
                 tag = "info"
             self.log_queue.put((line, tag))
         self.log_queue.put(("─── JARVIS finalizado ───\n", "info"))
+        self.after(0, self._set_listening_ui, "esperando")
         self.after(0, self._set_stopped)
 
     def _poll_log(self):
