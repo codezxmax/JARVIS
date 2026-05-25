@@ -657,15 +657,26 @@ def main_jarvis_loop():
             procesar_comando(cmd)
             continue
 
-        # Activación por keyword configurable
-        if KEYWORD in cmd:
+        # Activación por keyword configurable (normalizar acentos para mejor match)
+        _cmd_kn = cmd.replace("á","a").replace("é","e").replace("í","i")\
+                     .replace("ó","o").replace("ú","u")
+        _kw_kn  = KEYWORD.replace("á","a").replace("é","e").replace("í","i")\
+                         .replace("ó","o").replace("ú","u")
+        if _kw_kn in _cmd_kn:
             hablar(random.choice(_GREETINGS_RESP))
             followup = escuchar_comando(timeout=10, phrase_limit=15)
             procesar_comando(followup)
 
         # Comandos directos (contiene "jarvis")
         elif "jarvis" in cmd:
-            procesar_comando(cmd)
+            # Si dijo SOLO "jarvis" sin comando → modo activación (saludo + espera)
+            bare = cmd.replace("jarvis", "").strip()
+            if bare:
+                procesar_comando(cmd)
+            else:
+                hablar(random.choice(_GREETINGS_RESP))
+                followup = escuchar_comando(timeout=10, phrase_limit=15)
+                procesar_comando(followup)
 
         time.sleep(0.1)
 

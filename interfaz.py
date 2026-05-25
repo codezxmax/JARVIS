@@ -712,18 +712,40 @@ class JarvisGUI(tk.Tk):
             ("h1",   "🤖  Guía de uso de JARVIS\n\n"),
 
             ("h2",   "▸  Activación\n"),
-            ("body", '  Diga "hola jarvis" o "jarvis" para activar el asistente.\n'
-                     '  Espere el indicador 🔴 ESCUCHANDO y luego dicte su orden.\n\n'),
+            ("body", '  Diga "hola jarvis" o simplemente "jarvis" para activar el asistente.\n'
+                     '  JARVIS responderá con un saludo y esperará su orden.\n'
+                     '  También puede decir "jarvis [comando]" directamente sin esperar.\n\n'),
 
             ("h2",   "▸  Comandos de voz incorporados\n"),
-            ("code", '  "jarvis suspende"            '),
+            ("code", '  "jarvis suspende"                  '),
             ("body", "→  Suspende el PC (pide confirmación)\n"),
-            ("code", '  "jarvis modo café"           '),
-            ("body", "→  Silencia notificaciones del sistema\n"),
-            ("code", '  "jarvis pausa la música"     '),
+            ("code", '  "jarvis modo café"                 '),
+            ("body", "→  Abre Chrome con sus sitios + sistema + música\n"),
+            ("code", '  "jarvis pausa la música"           '),
             ("body", "→  Pausa / reanuda Spotify\n"),
-            ("code", '  "jarvis música que me gusta" '),
-            ("body", "→  Reproduce lista de favoritas\n\n"),
+            ("code", '  "jarvis música que me gusta"       '),
+            ("body", "→  Reproduce su playlist favorita\n"),
+            ("code", '  "busca la canción [nombre]"        '),
+            ("body", "→  Busca y reproduce en Spotify\n"),
+            ("code", '  "busca en spotify [artista]"       '),
+            ("body", "→  Busca artista/álbum en Spotify\n\n"),
+
+            ("h2",   "▸  Pláticas y preguntas\n"),
+            ("body", '  JARVIS entiende frases naturales; no hace falta decir "jarvis" antes:\n\n'),
+            ("code", '  "cómo estás"       '),
+            ("body", "→  JARVIS responde cómo se encuentra\n"),
+            ("code", '  "qué hora es"      '),
+            ("body", "→  Dice la hora actual\n"),
+            ("code", '  "qué día es"       '),
+            ("body", "→  Dice la fecha de hoy\n"),
+            ("code", '  "quién eres"       '),
+            ("body", "→  Se presenta\n"),
+            ("code", '  "qué puedes hacer" '),
+            ("body", "→  Lista sus capacidades\n"),
+            ("code", '  "gracias"          '),
+            ("body", "→  Responde cortésmente\n"),
+            ("code", '  "hasta luego"      '),
+            ("body", "→  Se despide\n\n"),
 
             ("h2",   "▸  Confirmación de suspensión\n"),
             ("body", '  Cuando JARVIS pregunte "¿de verdad quiere ejecutar esa orden?"\n'
@@ -733,26 +755,50 @@ class JarvisGUI(tk.Tk):
             ("h2",   "▸  Comandos personalizados\n"),
             ("body", '  Agréguelos desde la pestaña Comandos → botón Agregar.\n'
                      '  Cada entrada tiene: nombre, frase activadora y acción.\n'
+                     '  Acciones disponibles: abrir URL, abrir aplicación, Spotify URI,\n'
+                     '  controles de medios (play/pausa, siguiente, anterior),\n'
+                     '  modo café, suspender PC, o solo responder con voz.\n'
                      '  Puede activar/desactivar comandos sin eliminarlos.\n\n'),
 
+            ("h2",   "▸  Nombre y configuración\n"),
+            ("body", '  En la pestaña Configuración puede personalizar:\n'
+                     '  • Nombre con el que JARVIS lo llama (por defecto: señor Maxi)\n'
+                     '  • Frase de activación (keyword)\n'
+                     '  • Velocidad y volumen de la voz\n'
+                     '  • Saludo inicial al arrancar\n'
+                     '  • Idioma de reconocimiento de voz\n\n'),
+
+            ("h2",   "▸  Ícono en la bandeja del sistema\n"),
+            ("body", '  Al minimizar la ventana, JARVIS se oculta en la bandeja.\n'
+                     '  Haga clic derecho sobre el ícono para:\n'
+                     '  • Mostrar panel  →  abre la ventana principal\n'
+                     '  • Detener JARVIS →  detiene el asistente sin cerrar el panel\n'
+                     '  • Salir          →  cierra completamente JARVIS\n\n'),
+
+            ("h2",   "▸  Mensajes automáticos\n"),
+            ("body", '  Si no hay actividad por 12 minutos, JARVIS envía un mensaje\n'
+                     '  para confirmar que sigue activo y operativo.\n\n'),
+
             ("h2",   "▸  Actualización automática\n"),
-            ("body", '  Configure la URL del archivo version.json en\n'
-                     '  la pestaña Configuración.\n'),
-            ("dim",  '  Valor por defecto:\n'
+            ("body", '  JARVIS comprueba actualizaciones al arrancar (8 segundos de espera).\n'
+                     '  Si hay una versión nueva, aparece un banner de notificación.\n'
+                     '  Configure la URL del archivo version.json en la pestaña Configuración.\n'),
+            ("dim",  '  URL por defecto:\n'
                      '  https://raw.githubusercontent.com/codezxmax/JARVIS/master/version.json\n\n'),
 
-            ("h2",   "▸  Indicadores de estado (sidebar)\n"),
+            ("h2",   "▸  Indicadores de estado\n"),
             ("body", '  🔴 ESCUCHANDO  →  micrófono activo, puede hablar\n'
                      '  🔊 HABLANDO    →  JARVIS está respondiendo\n'
                      '  ⬜ En espera   →  esperando activación\n\n'),
 
             ("h2",   "▸  Consejos para mejor reconocimiento\n"),
             ("body", '  • Hable a velocidad normal y con voz clara.\n'
-                     '  • Espere a que el indicador muestre 🔴 ESCUCHANDO.\n'
+                     '  • Espere a que el indicador muestre 🔴 ESCUCHANDO antes de hablar.\n'
                      '  • El volumen del sistema baja automáticamente al escuchar\n'
                      '    y se restaura al terminar.\n'
+                     '  • El micrófono se calibra 2 segundos al arrancar: haga silencio.\n'
                      '  • Si hay errores de audio continuos, detenga y reinicie JARVIS.\n'
-                     '  • El micrófono se calibra al arrancar (2 segundos de silencio).\n'),
+                     '  • Puede ver errores y texto reconocido en la pestaña Consola.\n'),
         ]
         for tag, text in content:
             txt.insert("end", text, tag)
