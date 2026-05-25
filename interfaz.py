@@ -24,6 +24,13 @@ try:
 except ImportError:
     _HAS_UPDATER = False
 
+try:
+    import pystray
+    from PIL import Image as PilImage
+    _HAS_TRAY = True
+except ImportError:
+    _HAS_TRAY = False
+
 # ── Paleta ────────────────────────────────────────────────────────────────────
 BG     = "#0d0d1a"
 BG2    = "#141428"
@@ -333,10 +340,13 @@ class JarvisGUI(tk.Tk):
         self.log_queue   = queue.Queue()
         self._status_var = tk.StringVar(value="● DETENIDO")
         self._last_heard = tk.StringVar(value="—")
+        self._tray       = None
         self._apply_theme()
         self._build_ui()
         self._refresh_table()
         self._poll_log()
+        self._setup_tray()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         # Comprobar actualizaciones en segundo plano (no bloquea el inicio)
         if _HAS_UPDATER:
             threading.Thread(target=self._check_update_async,
@@ -584,12 +594,13 @@ class JarvisGUI(tk.Tk):
         # ── Auto-actualización
         sec("🔄  Auto-actualización")
         f = row("URL del version.json remoto")
-        self.var_update_url = tk.StringVar(value="")
+        _DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/codezxmax/JARVIS/master/version.json"
+        self.var_update_url = tk.StringVar(value=_DEFAULT_UPDATE_URL)
         tk.Entry(f, textvariable=self.var_update_url, bg=BG3, fg=FG,
                  insertbackground=FG, relief="flat", font=FONT,
                  bd=6, width=44).pack(side="left", padx=4)
         tk.Label(inner, text=(
-            "Ej: https://raw.githubusercontent.com/TU_USUARIO/JARVIS/main/version.json\n"
+            "URL donde JARVIS buscará actualizaciones automáticamente.\n"
             "Deja vacío para deshabilitar la comprobación de actualizaciones."),
                  bg=BG2, fg=FG2, font=FONT_SM, justify="left").pack(
             anchor="w", padx=26, pady=(0, 6))
@@ -732,6 +743,7 @@ class JarvisGUI(tk.Tk):
         self.lbl_status.configure(fg=GREEN)
         self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="normal")
+        self._update_tray_title(True)
         threading.Thread(target=self._read_output, daemon=True).start()
 
     def _stop_jarvis(self):
@@ -746,6 +758,7 @@ class JarvisGUI(tk.Tk):
         self.lbl_status.configure(fg=RED)
         self.btn_start.configure(state="normal")
         self.btn_stop.configure(state="disabled")
+        self._update_tray_title(False)
 
     def _read_output(self):
         for line in self.jarvis_proc.stdout:
@@ -810,7 +823,8 @@ class JarvisGUI(tk.Tk):
         self.var_saludo.set(
             s.get("saludo",
                   "Hola señor Maxi, ¿cómo está su día? ¿Qué necesita de mí?"))
-        self.var_update_url.set(s.get("update_url", ""))
+        _DEF = "https://raw.githubusercontent.com/codezxmax/JARVIS/master/version.json"
+        self.var_update_url.set(s.get("update_url", "") or _DEF)
 
     def _save_settings(self):
         data = {
@@ -886,7 +900,58 @@ class JarvisGUI(tk.Tk):
             messagebox.showwarning("No encontrado",
                                    f"No se encontró {path}", parent=self)
 
+    # ── Bandeja del sistema (pystray) ─────────────────────────────────────────
+    def _setup_tray(self):
+        if not _HAS_TRAY:
+            return
+        icon_path = os.path.join(BASE_DIR, "icon.png")
+        try:
+            img = PilImage.open(icon_path).resize((64, 64), PilImage.LANCZOS)
+        except Exception:
+            img = PilImage.new("RGB", (64, 64), color=(0, 212, 170))
+        menu = pystray.Menu(
+            pystray.MenuItem("Mostrar panel", self._show_window, default=True),
+            pystray.MenuItem("Detener JARVIS", self._stop_jarvis_from_tray),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Salir", self._quit_from_tray),
+        )
+        self._tray = pystray.Icon("JARVIS", img, "JARVIS — Panel de Control", menu)
+        self._tray.run_detached()
+
+    def _update_tray_title(self, activo: bool):
+        if _HAS_TRAY and self._tray is not None:
+            try:
+                self._tray.title = "JARVIS — ACTIVO" if activo else "JARVIS — Panel de Control"
+            except Exception:
+                pass
+
+    def _show_window(self, icon=None, item=None):
+        self.after(0, self._do_show_window)
+
+    def _do_show_window(self):
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def _stop_jarvis_from_tray(self, icon=None, item=None):
+        self.after(0, self._stop_jarvis)
+
+    def _quit_from_tray(self, icon=None, item=None):
+        self.after(0, self.on_close)
+
+    def _on_close(self):
+        """WM_DELETE_WINDOW: minimiza a bandeja si está disponible."""
+        if _HAS_TRAY and self._tray is not None:
+            self.withdraw()
+        else:
+            self.on_close()
+
     def on_close(self):
+        if _HAS_TRAY and self._tray is not None:
+            try:
+                self._tray.stop()
+            except Exception:
+                pass
         self._stop_jarvis()
         self.destroy()
 
@@ -935,5 +1000,4 @@ class JarvisGUI(tk.Tk):
 # ── Punto de entrada ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app = JarvisGUI()
-    app.protocol("WM_DELETE_WINDOW", app.on_close)
     app.mainloop()
